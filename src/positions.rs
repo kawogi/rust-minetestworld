@@ -11,7 +11,7 @@ use std::{fmt::Display, io};
 
 use crate::{
     BLOCK_BITS_1D, BLOCK_KEY_MIN, BLOCK_KEY_RANGE, BLOCK_MASK, BLOCK_NODES_1D, BLOCK_NODES_3D,
-    NODE_BITS_1D, NODE_MASK, WORLD_BLOCKS_RANGE,
+    NODE_BITS_1D, NODE_MASK, NODE_STRIDE, WORLD_BLOCKS_RANGE,
 };
 
 fn invalid_data_error<E>(error: E) -> sqlx::Error
@@ -230,7 +230,7 @@ impl From<NodeIndex> for NodePos {
 /// Convert a MapBlock-relative node position into a flat array index
 impl From<NodePos> for NodeIndex {
     fn from(value: NodePos) -> NodeIndex {
-        Self(value.0.x + (value.0.y << 4) + (value.0.z << 8))
+        Self(value.0.dot(NODE_STRIDE))
     }
 }
 

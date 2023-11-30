@@ -55,6 +55,7 @@ pub mod world;
 
 use std::ops::Range;
 
+use glam::U16Vec3;
 pub use map_block::MapBlock;
 pub use map_block::Node;
 pub use map_data::MapData;
@@ -157,6 +158,18 @@ pub const WORLD_BLOCKS_3D: u64 = 1 << BLOCK_BITS_3D;
 
 /// Number of blocks in an entire world as usize for convenience
 pub const WORLD_BLOCKS_3D_U: usize = WORLD_BLOCKS_3D as usize;
+
+/// Number of node index increments in X-direction
+pub const NODE_STRIDE_X: u16 = 1;
+
+/// Number of node index increments in Y-direction
+pub const NODE_STRIDE_Y: u16 = BLOCK_NODES_1D;
+
+/// Number of node index increments in Z-direction
+pub const NODE_STRIDE_Z: u16 = BLOCK_NODES_1D * BLOCK_NODES_1D;
+
+/// Number of node index increments in all directions
+pub const NODE_STRIDE: U16Vec3 = U16Vec3::new(NODE_STRIDE_X, NODE_STRIDE_Y, NODE_STRIDE_Z);
 
 #[cfg(test)]
 mod tests;
