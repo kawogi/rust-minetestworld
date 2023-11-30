@@ -6,6 +6,7 @@ use futures::stream;
 use futures::stream::BoxStream;
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
+use glam::I16Vec3;
 #[cfg(feature = "experimental-leveldb")]
 use leveldb_rs::{LevelDBError, DB as LevelDb};
 use log::LevelFilter;
@@ -24,7 +25,8 @@ use std::str::FromStr;
 use url::Host;
 
 use crate::map_block::{MapBlock, MapBlockError, Node, NodeIter};
-use crate::positions::Position;
+use crate::positions::BlockKey;
+use crate::positions::BlockPos;
 
 const POSTGRES_QUERY: &str = "SELECT data FROM blocks
  WHERE (posx = $1 AND posy = $2 AND posz = $3)";
@@ -59,7 +61,7 @@ pub enum MapDataError {
 
     /// This mapblock does not exist
     #[error("MapBlock {0:?} does not exist")]
-    MapBlockNonexistent(Position),
+    MapBlockNonexistent(BlockPos),
 
     /// An IO related error
     #[error("IO error: {0}")]
@@ -71,7 +73,7 @@ impl MapDataError {
     ///
     /// while converting `RowNotFound` to `MapBlockNonexistent(pos)`
     #[cfg(any(feature = "sqlite", feature = "postgres"))]
-    fn from_sqlx_error(e: sqlx::Error, pos: Position) -> MapDataError {
+    fn from_sqlx_error(e: sqlx::Error, pos: BlockPos) -> MapDataError {
         if let sqlx::Error::RowNotFound = e {
             MapDataError::MapBlockNonexistent(pos)
         } else {
@@ -174,7 +176,7 @@ impl MapData {
     ///
     /// Note that the unit of the coordinates will be
     /// [MAPBLOCK_LENGTH][`crate::map_block::MAPBLOCK_LENGTH`].
-    pub async fn all_mapblock_positions(&self) -> BoxStream<Result<Position, MapDataError>> {
+    pub async fn all_mapblock_positions(&self) -> BoxStream<Result<BlockPos, MapDataError>> {
         match self {
             #[cfg(feature = "sqlite")]
             MapData::Sqlite(pool) => sqlx::query_as("SELECT pos FROM blocks")
@@ -195,7 +197,8 @@ impl MapData {
                     Ok(positions) => stream::iter(
                         positions
                             .into_iter()
-                            .map(Position::from_database_key)
+                            .map(|key| BlockKey::try_from(key).unwrap())
+                            .map(BlockPos::from)
                             .map(Ok),
                     )
                     .boxed(),
@@ -226,35 +229,36 @@ impl MapData {
     }
 
     /// Queries the backend for the data of a single mapblock
-    pub async fn get_block_data(&self, pos: Position) -> Result<Vec<u8>, MapDataError> {
-        let pos_index = pos.as_database_key();
+    pub async fn get_block_data(&self, pos: BlockPos) -> Result<Vec<u8>, MapDataError> {
+        let block_key = i64::from(BlockKey::from(pos));
+        let pos_vec = pos.into_index_vec();
         match self {
             #[cfg(feature = "sqlite")]
             MapData::Sqlite(pool) => sqlx::query("SELECT data FROM blocks WHERE pos = ?")
-                .bind(pos_index)
+                .bind(block_key)
                 .fetch_one(pool)
                 .await
                 .and_then(|row| row.try_get("data"))
                 .map_err(|e| MapDataError::from_sqlx_error(e, pos)),
             #[cfg(feature = "postgres")]
             MapData::Postgres(pool) => sqlx::query(POSTGRES_QUERY)
-                .bind(pos.0.x)
-                .bind(pos.0.y)
-                .bind(pos.0.z)
+                .bind(pos_vec.x)
+                .bind(pos_vec.y)
+                .bind(pos_vec.z)
                 .fetch_one(pool)
                 .await
                 .and_then(|row| row.try_get("data"))
                 .map_err(|e| MapDataError::from_sqlx_error(e, pos)),
             #[cfg(feature = "redis")]
             MapData::Redis { connection, hash } => {
-                let value: Option<_> = connection.clone().hget(hash.to_string(), pos_index).await?;
+                let value: Option<_> = connection.clone().hget(hash.to_string(), block_key).await?;
                 value.ok_or(MapDataError::MapBlockNonexistent(pos))
             }
             #[cfg(feature = "experimental-leveldb")]
             MapData::LevelDb(db) => Ok(db
                 .lock()
                 .await
-                .get(&pos_index.to_le_bytes())
+                .get(&block_key.to_le_bytes())
                 .map_err(MapDataError::LevelDbError)?
                 .ok_or(MapDataError::MapBlockNonexistent(pos))?),
         }
@@ -264,18 +268,20 @@ impl MapData {
     ///
     /// `pos` is a map block position; this means that every dimension is divided
     /// by the side length of a map block.
-    pub async fn get_mapblock(&self, pos: Position) -> Result<MapBlock, MapDataError> {
+    pub async fn get_mapblock(&self, pos: BlockPos) -> Result<MapBlock, MapDataError> {
         Ok(MapBlock::from_data(
             self.get_block_data(pos).await?.as_slice(),
         )?)
     }
 
     /// Sets the backend's mapblock data for position `pos` to `data`
-    pub async fn set_mapblock_data(&self, pos: Position, data: &[u8]) -> Result<(), MapDataError> {
+    pub async fn set_mapblock_data(&self, pos: BlockPos, data: &[u8]) -> Result<(), MapDataError> {
+        let block_key = i64::from(BlockKey::from(pos));
+        let pos_vec = pos.into_index_vec();
         match self {
             #[cfg(feature = "sqlite")]
             MapData::Sqlite(pool) => sqlx::query(SQLITE_UPSERT)
-                .bind(pos.as_database_key())
+                .bind(block_key)
                 .bind(data)
                 .execute(pool)
                 .await
@@ -283,9 +289,9 @@ impl MapData {
                 .map_err(MapDataError::SqlError),
             #[cfg(feature = "postgres")]
             MapData::Postgres(pool) => sqlx::query(POSTGRES_UPSERT)
-                .bind(pos.0.x)
-                .bind(pos.0.y)
-                .bind(pos.0.z)
+                .bind(pos_vec.x)
+                .bind(pos_vec.y)
+                .bind(pos_vec.z)
                 .bind(data)
                 .execute(pool)
                 .await
@@ -294,14 +300,14 @@ impl MapData {
             #[cfg(feature = "redis")]
             MapData::Redis { connection, hash } => connection
                 .clone()
-                .hset(hash, pos.as_database_key(), data)
+                .hset(hash, block_key, data)
                 .await
                 .map_err(|e| e.into()),
         }
     }
 
     /// Inserts or replaces the map block at `pos`
-    pub async fn set_mapblock(&self, pos: Position, block: &MapBlock) -> Result<(), MapDataError> {
+    pub async fn set_mapblock(&self, pos: BlockPos, block: &MapBlock) -> Result<(), MapDataError> {
         self.set_mapblock_data(pos, &block.to_binary()?).await
     }
 
@@ -310,8 +316,8 @@ impl MapData {
     /// Yields all nodes along with their relative position within the map block
     pub async fn iter_mapblock_nodes(
         &self,
-        mapblock_pos: Position,
-    ) -> Result<impl Iterator<Item = (Position, Node)>, MapDataError> {
+        mapblock_pos: BlockPos,
+    ) -> Result<impl Iterator<Item = (I16Vec3, Node)>, MapDataError> {
         let mapblock = self.get_mapblock(mapblock_pos).await?;
         Ok(NodeIter::from(mapblock, mapblock_pos))
     }

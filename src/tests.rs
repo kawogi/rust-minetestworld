@@ -1,20 +1,27 @@
-use crate::positions::Position;
+use crate::positions::BlockKey;
+use crate::positions::BlockPos;
+use crate::positions::NodeIndex;
+use crate::positions::NodePos;
+use crate::positions::SplitPos;
 use crate::world::keyvalue_to_uri_connectionstr;
 use crate::MapBlock;
 use crate::MapData;
 use crate::MapDataError;
 use crate::World;
+use crate::NODE_BITS_1D;
 use futures::prelude::*;
+use glam::I16Vec3;
+use glam::U16Vec3;
 
 #[test]
 fn simple_math() {
     assert_eq!(
-        Position::from_database_key(134270984),
-        Position::new::<i16>(8, 13, 8)
+        BlockPos::from(BlockKey::try_from(134270984).unwrap()),
+        BlockPos::from_index_vec(I16Vec3::new(8, 13, 8)),
     );
     assert_eq!(
-        Position::from_database_key(-184549374),
-        Position::new::<i16>(2, 0, -11)
+        BlockPos::from(BlockKey::try_from(-184549374).unwrap()),
+        BlockPos::from_index_vec(I16Vec3::new(2, 0, -11)),
     );
 }
 
@@ -32,7 +39,7 @@ async fn can_query() {
         .unwrap();
     assert_eq!(mapdata.all_mapblock_positions().await.count().await, 5923);
     let block = mapdata
-        .get_block_data(Position::new::<i16>(-13, -8, 2))
+        .get_block_data((I16Vec3::new(-13, -8, 2) << NODE_BITS_1D).split().0)
         .await
         .unwrap();
     assert_eq!(block.len(), 40);
@@ -40,7 +47,7 @@ async fn can_query() {
 
 #[async_std::test]
 async fn mapblock_miss() {
-    let position = Position::new::<i16>(0, 0, 0);
+    let position = I16Vec3::new(0, 0, 0).split().0;
     let mapdata = MapData::from_sqlite_file("TestWorld/map.sqlite", true)
         .await
         .unwrap();
@@ -78,20 +85,18 @@ async fn can_parse_all_mapblocks() {
 
 #[async_std::test]
 async fn count_nodes() {
+    let blockpos = BlockPos::from_index_vec(I16Vec3::new(-13, -8, 2));
+
     let mapdata = MapData::from_sqlite_file("TestWorld/map.sqlite", true)
         .await
         .unwrap();
-    let count = mapdata
-        .iter_mapblock_nodes(Position::new::<i16>(-13, -8, 2))
-        .await
-        .unwrap()
-        .count();
+    let count = mapdata.iter_mapblock_nodes(blockpos).await.unwrap().count();
     assert_eq!(count, 4096);
 }
 
 #[async_std::test]
 async fn iter_node_positions() {
-    let blockpos = Position::new::<i16>(-13, -8, 2);
+    let blockpos = BlockPos::from_index_vec(I16Vec3::new(-13, -8, 2));
 
     let world = World::open("TestWorld");
     let mapdata = world.get_map_data().await.unwrap();
@@ -102,11 +107,14 @@ async fn iter_node_positions() {
 
 #[test]
 fn node_index() {
-    assert_eq!(Position::from_node_index(0), Position::new::<i16>(0, 0, 0));
     assert_eq!(
-        Position::from_node_index(4095),
-        Position::new::<i16>(15, 15, 15)
-    )
+        NodePos::from(NodeIndex::try_from(0).unwrap()),
+        NodePos::try_from(U16Vec3::new(0, 0, 0)).unwrap()
+    );
+    assert_eq!(
+        NodePos::from(NodeIndex::try_from(4095).unwrap()),
+        NodePos::try_from(U16Vec3::new(15, 15, 15)).unwrap()
+    );
 }
 
 #[test]

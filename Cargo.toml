@@ -23,6 +23,8 @@ log = "0.4"
 num-integer = "0.1" # Needed for div_floor until https://github.com/rust-lang/rust/issues/88581 is stabilized
 glam = { git = "https://github.com/bitshifter/glam-rs.git" }
 
+rand = "*"
+
 [target.'cfg(not(all(target_endian = "big", target_pointer_width = "32")))'.dependencies]
 smartstring = { version = "1", optional = true }
 

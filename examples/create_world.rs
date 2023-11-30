@@ -1,4 +1,5 @@
-use minetestworld::{Node, Position, World};
+use glam::I16Vec3;
+use minetestworld::{Node, World};
 
 #[async_std::main]
 async fn main() {
@@ -7,7 +8,7 @@ async fn main() {
     for y in -99..100 {
         for x in -100..100 {
             for z in -100..100 {
-                let pos = Position::new::<i16>(x, y, z);
+                let pos = I16Vec3::new(x, y, z);
                 let content: &[u8] = if y > 0 { b"air" } else { b"default:wood" };
                 vm.set_node(
                     pos,

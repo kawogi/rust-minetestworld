@@ -1,17 +1,18 @@
 use std::error::Error;
 mod common;
-use minetestworld::{Position, World};
+use glam::I16Vec3;
+use minetestworld::World;
 
 async fn change_voxel() -> Result<(), minetestworld::world::WorldError> {
     let world = World::open("TestWorld copy");
     let mut vm = world.get_voxel_manip(true).await?;
-    vm.set_content(Position::new(0i16, 0, 0), b"default:diamond")
+    vm.set_content(I16Vec3::new(0, 0, 0), b"default:diamond")
         .await?;
     vm.commit().await?;
     std::mem::drop(vm);
 
     let mut vm = world.get_voxel_manip(true).await?;
-    let node = vm.get_node(Position::new(0i16, 0, 0)).await?;
+    let node = vm.get_node(I16Vec3::new(0, 0, 0)).await?;
     assert_eq!(node.param0, b"default:diamond");
     Ok(())
 }

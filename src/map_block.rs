@@ -1,39 +1,16 @@
 //! Contains data types and constants to work with MapBlocks
 
-use crate::positions::Position;
-
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 
+use glam::I16Vec3;
+
+use crate::positions::{BlockPos, NodeIndex, NodePos, SplitPos};
+use crate::BLOCK_NODES_3D_U;
+
 #[cfg(feature = "smartstring")]
 type String = smartstring::SmartString<smartstring::LazyCompact>;
-
-/// Side length of map blocks.
-///
-/// The map data is divided into chunks of nodes (=voxels).
-/// Currently, a chunk consists of 16·16·16 nodes.
-///
-/// The number of nodes a mapblock contains is [`MAPBLOCK_SIZE`].
-///
-/// ```
-/// use minetestworld::MAPBLOCK_LENGTH;
-///
-/// assert_eq!(MAPBLOCK_LENGTH, 16);
-/// ```
-pub const MAPBLOCK_LENGTH: u8 = 16;
-
-/// How many nodes are contained in a map block.
-///
-/// This is [`MAPBLOCK_LENGTH`]³.
-///
-/// ```
-/// use minetestworld::MAPBLOCK_SIZE;
-///
-/// assert_eq!(MAPBLOCK_SIZE, 4096);
-/// ```
-pub const MAPBLOCK_SIZE: usize =
-    MAPBLOCK_LENGTH as usize * MAPBLOCK_LENGTH as usize * MAPBLOCK_LENGTH as usize;
 
 /// This content type string refers to an unknown content type
 pub const CONTENT_UNKNOWN: &[u8] = b"unknown";
@@ -65,8 +42,8 @@ fn read_i32_be(r: &mut impl Read) -> std::io::Result<i32> {
     Ok(i32::from_be_bytes(buffer))
 }
 
-fn read_param0(r: &mut impl Read) -> std::io::Result<[u16; MAPBLOCK_SIZE]> {
-    let mut array = [0; MAPBLOCK_SIZE];
+fn read_param0(r: &mut impl Read) -> std::io::Result<[u16; BLOCK_NODES_3D_U]> {
+    let mut array = [0; BLOCK_NODES_3D_U];
 
     for p0 in array.iter_mut() {
         *p0 = read_u16_be(r)?;
@@ -75,8 +52,8 @@ fn read_param0(r: &mut impl Read) -> std::io::Result<[u16; MAPBLOCK_SIZE]> {
     Ok(array)
 }
 
-fn read_nodeparams(r: &mut impl Read) -> std::io::Result<[u8; MAPBLOCK_SIZE]> {
-    let mut params = [0; MAPBLOCK_SIZE];
+fn read_nodeparams(r: &mut impl Read) -> std::io::Result<[u8; BLOCK_NODES_3D_U]> {
+    let mut params = [0; BLOCK_NODES_3D_U];
     r.read_exact(&mut params)?;
     Ok(params)
 }
@@ -148,7 +125,7 @@ pub struct NodeVar {
 #[derive(Debug)]
 pub struct NodeMetadata {
     /// The mapblock-relative node position of this item
-    pub position: Position,
+    pub position: NodePos,
     /// Metadata variables
     pub vars: Vec<NodeVar>,
     /// Serialized inventory
@@ -176,7 +153,7 @@ pub struct StaticObject {
 #[derive(Debug)]
 pub struct NodeTimer {
     /// The mapblock-relative node position of this timer
-    pub position: Position,
+    pub position: NodePos,
     /// Timeout in milliseconds
     pub timeout: i32,
     /// Elapsed time in milliseconds
@@ -308,9 +285,9 @@ impl MapBlock {
             name_id_mappings: HashMap::from([(0, Vec::from(CONTENT_IGNORE))]),
             content_width: 2,
             params_width: 2,
-            param0: [0; MAPBLOCK_SIZE],
-            param1: [0; MAPBLOCK_SIZE],
-            param2: [0; MAPBLOCK_SIZE],
+            param0: [0; BLOCK_NODES_3D_U],
+            param1: [0; BLOCK_NODES_3D_U],
+            param2: [0; BLOCK_NODES_3D_U],
             node_metadata: vec![],
             node_timers: vec![],
             static_objects: vec![],
@@ -328,8 +305,8 @@ impl MapBlock {
     }
 
     /// Queries the mapblock for a node on the given mapblock-relative coordinates
-    pub fn get_node_at(&self, relative_node_pos: Position) -> Node {
-        let index = relative_node_pos.as_node_index() as usize % MAPBLOCK_SIZE;
+    pub fn get_node_at(&self, node_pos: NodePos) -> Node {
+        let index = usize::from(node_pos);
         let param0 = self.content_from_id(self.param0[index]);
         Node {
             param0: param0.to_vec(),
@@ -372,21 +349,18 @@ impl MapBlock {
     }
 
     /// Sets the content type of this node
-    pub fn set_content(&mut self, relative_node_pos: Position, content_id: u16) {
-        let index = relative_node_pos.as_node_index() as usize % MAPBLOCK_SIZE;
-        self.param0[index] = content_id
+    pub fn set_content(&mut self, node_pos: NodePos, content_id: u16) {
+        self.param0[usize::from(node_pos)] = content_id
     }
 
     /// Sets the param1 of this node
-    pub fn set_param1(&mut self, relative_node_pos: Position, param1: u8) {
-        let index = relative_node_pos.as_node_index() as usize % MAPBLOCK_SIZE;
-        self.param1[index] = param1
+    pub fn set_param1(&mut self, node_pos: NodePos, param1: u8) {
+        self.param1[usize::from(node_pos)] = param1
     }
 
     /// Sets the param2 of this node
-    pub fn set_param2(&mut self, relative_node_pos: Position, param2: u8) {
-        let index = relative_node_pos.as_node_index() as usize % MAPBLOCK_SIZE;
-        self.param2[index] = param2
+    pub fn set_param2(&mut self, node_pos: NodePos, param2: u8) {
+        self.param2[usize::from(node_pos)] = param2
     }
 
     /// Returns an iterator over all content types that appear in name-id-mapping
@@ -479,7 +453,9 @@ fn read_node_metadata(data: &mut impl Read) -> Result<Vec<NodeMetadata>, MapBloc
 
     for _ in 0..metadata_count {
         let mut metadatum = NodeMetadata {
-            position: Position::from_node_index(read_u16_be(data)?),
+            position: NodePos::from(NodeIndex::try_from(read_u16_be(data)?).map_err(|_| {
+                MapBlockError::BlobMalformed("node index exceeds valid range".into())
+            })?),
             vars: Default::default(),
             inventory: vec![],
         };
@@ -516,7 +492,7 @@ fn write_node_metadata(data: &[NodeMetadata], dest: &mut impl Write) -> std::io:
         dest.write_all(&[2])?;
         dest.write_all(&(data.len() as u16).to_be_bytes())?; // TODO handle count greater than 65k
         for metadatum in data {
-            dest.write_all(&metadatum.position.as_node_index().to_be_bytes())?;
+            dest.write_all(&u16::from(NodeIndex::from(metadatum.position)).to_be_bytes())?;
             for var in &metadatum.vars {
                 dest.write_all(&(var.key.len() as u16).to_be_bytes())?;
                 dest.write_all(&var.key)?;
@@ -597,7 +573,9 @@ fn read_timers(data: &mut impl Read) -> Result<Vec<NodeTimer>, MapBlockError> {
     let mut timers = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        let position = Position::from_node_index(read_u16_be(data)?);
+        let position = NodeIndex::try_from(read_u16_be(data)?)
+            .map_err(|_| MapBlockError::BlobMalformed("Node index ot of range".into()))?
+            .into();
         let timeout = read_i32_be(data)?;
         let elapsed = read_i32_be(data)?;
         timers.push(NodeTimer {
@@ -614,7 +592,7 @@ fn write_node_timers(data: &[NodeTimer], dest: &mut impl Write) -> std::io::Resu
     dest.write_all(&[10])?; // Data length of node timers
     dest.write_all(&(data.len() as u16).to_be_bytes())?;
     for timer in data {
-        dest.write_all(&timer.position.as_node_index().to_be_bytes())?;
+        dest.write_all(&(u16::from(NodeIndex::from(timer.position))).to_be_bytes())?;
         dest.write_all(&timer.timeout.to_be_bytes())?;
         dest.write_all(&timer.elapsed.to_be_bytes())?;
     }
@@ -628,12 +606,12 @@ fn write_node_timers(data: &[NodeTimer], dest: &mut impl Write) -> std::io::Resu
 /// [node][`Node`]).
 pub struct NodeIter {
     mapblock: MapBlock,
-    mapblock_position: Position,
+    mapblock_position: BlockPos,
     node_index: u16,
 }
 
 impl NodeIter {
-    pub(crate) fn from(mapblock: MapBlock, mapblock_position: Position) -> Self {
+    pub(crate) fn from(mapblock: MapBlock, mapblock_position: BlockPos) -> Self {
         NodeIter {
             mapblock,
             mapblock_position,
@@ -644,23 +622,21 @@ impl NodeIter {
 
 impl Iterator for NodeIter {
     /// A tuple consisting of the node and its position in the world.
-    type Item = (Position, Node);
+    type Item = (I16Vec3, Node);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.node_index;
-        if index < 4096 {
+        if let Ok(index) = NodeIndex::try_from(self.node_index) {
             self.node_index += 1;
-            let pos =
-                self.mapblock_position * MAPBLOCK_LENGTH as i16 + Position::from_node_index(index);
+            let world_pos = I16Vec3::join(self.mapblock_position, index.into());
             let param0 = self
                 .mapblock
-                .content_from_id(self.mapblock.param0[index as usize]);
+                .content_from_id(self.mapblock.param0[usize::from(index)]);
             let node = Node {
                 param0: param0.to_vec(),
-                param1: self.mapblock.param1[index as usize],
-                param2: self.mapblock.param2[index as usize],
+                param1: self.mapblock.param1[usize::from(index)],
+                param2: self.mapblock.param2[usize::from(index)],
             };
-            Some((pos, node))
+            Some((world_pos, node))
         } else {
             None
         }
