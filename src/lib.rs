@@ -134,8 +134,13 @@ pub const WORLD_BLOCKS_RANGE: Range<i16> = WORLD_BLOCKS_MIN..(1 << (BLOCK_BITS_1
 const DIAGONAL_KEY_STRIDE: i64 =
     1 + WORLD_BLOCKS_1D as i64 + WORLD_BLOCKS_1D as i64 * WORLD_BLOCKS_1D as i64;
 
+/// The minimum valid value for a block key
 pub const BLOCK_KEY_MIN: i64 = WORLD_BLOCKS_MIN as i64 * DIAGONAL_KEY_STRIDE;
+
+/// The maximum valid value for a block key
 pub const BLOCK_KEY_MAX: i64 = WORLD_BLOCKS_MAX as i64 * DIAGONAL_KEY_STRIDE;
+
+/// Valid block key range
 pub const BLOCK_KEY_RANGE: Range<i64> = BLOCK_KEY_MIN..(BLOCK_KEY_MAX + 1);
 
 /// Number of nodes in an entire world

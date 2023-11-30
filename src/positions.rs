@@ -41,6 +41,7 @@ where
 #[derive(Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub struct BlockPos(I16Vec3);
 
+/// An opaque key type used for addressing a block in the database
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Copy, Clone, Eq, Hash, PartialOrd, Ord)]
 pub struct BlockKey(i64);
@@ -52,27 +53,35 @@ impl From<BlockKey> for i64 {
 }
 
 impl TryFrom<i64> for BlockKey {
-    type Error = ();
+    type Error = BlockKeyOutOfRange;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if BLOCK_KEY_RANGE.contains(&value) {
             Ok(Self(value))
         } else {
-            Err(())
+            Err(BlockKeyOutOfRange)
         }
     }
 }
 
+/// Returned whenever a conversion to a `BlockKey` failed due to being out of range input values.
+#[derive(Debug)]
+pub struct BlockKeyOutOfRange;
+
 impl BlockPos {
+    /// Combines this block's position and a node position to form a world coordinate.
+    #[must_use]
     pub fn join(self, node_pos: NodePos) -> I16Vec3 {
         I16Vec3::join(self, node_pos)
     }
 
+    /// Returns the 3D-index of this block as vector.
     #[must_use]
     pub fn into_index_vec(self) -> I16Vec3 {
         self.0 >> NODE_BITS_1D
     }
 
+    /// Creates a new block position from the 3D-index of the block.
     #[must_use]
     pub fn from_index_vec(vec: I16Vec3) -> Self {
         Self(vec << NODE_BITS_1D)
@@ -147,10 +156,12 @@ impl FromRow<'_, SqliteRow> for BlockPos {
 #[derive(Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub struct NodePos(U16Vec3);
 
+/// The index of a node within a block.
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Copy, Clone, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeIndex(u16);
 
+/// Returned whenever a conversion to a `NodeIndex` failed due to being out of range input values.
 #[derive(Debug)]
 pub struct NodeIndexOutOfRange;
 
@@ -317,8 +328,12 @@ impl FromRow<'_, PgRow> for BlockPos {
 //     }
 // }
 
+/// Enables splitting and joining world coordinates.
 pub trait SplitPos {
+    /// Splits a world coordinate into a block position and a node position.
     fn split(self) -> (BlockPos, NodePos);
+
+    /// Joins a block position and a node position to form a new world coordinate.
     fn join(block_pos: BlockPos, node_pos: NodePos) -> Self;
 }
 
