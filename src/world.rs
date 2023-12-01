@@ -2,7 +2,7 @@
 
 use crate::MapData;
 use crate::MapDataError;
-use crate::VoxelManip;
+use crate::MapEdit;
 use async_std::fs;
 use async_std::fs::File;
 use async_std::io::BufReader;
@@ -185,8 +185,8 @@ impl World {
     }
 
     /// Returns a VoxelManip with the ability to read and write nodes
-    pub async fn get_voxel_manip(&self, writable: bool) -> Result<VoxelManip, WorldError> {
-        Ok(VoxelManip::new(self.get_map_data_backend(!writable).await?))
+    pub async fn get_voxel_manip(&self, writable: bool) -> Result<MapEdit, WorldError> {
+        Ok(MapEdit::new(self.get_map_data_backend(!writable).await?))
     }
 }
 

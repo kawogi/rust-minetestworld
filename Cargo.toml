@@ -16,7 +16,8 @@ redis = { version = "0.23", default-features = false, features = [
 ], optional = true }
 leveldb-rs = { version = "0.0.7", optional = true }
 url = { version = "2.2", optional = true }
-async-std = { version = "1", features = ["attributes"] }
+async-std = { version = "1.12", features = ["attributes"] }
+async-lock = "*"
 futures = "0.3"
 zstd = "0.13"
 log = "0.4"

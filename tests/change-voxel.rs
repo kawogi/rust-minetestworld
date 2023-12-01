@@ -5,14 +5,18 @@ use minetestworld::World;
 
 async fn change_voxel() -> Result<(), minetestworld::world::WorldError> {
     let world = World::open("TestWorld copy");
+    let pos = I16Vec3::new(0, 0, 0);
+    
     let mut vm = world.get_voxel_manip(true).await?;
-    vm.set_content(I16Vec3::new(0, 0, 0), b"default:diamond")
-        .await?;
+    vm.set_content(pos, b"default:diamond").await?;
+    let node = vm.get_node(pos).await?;
+    assert_eq!(node.param0, b"default:diamond");
+
     vm.commit().await?;
     std::mem::drop(vm);
 
     let mut vm = world.get_voxel_manip(true).await?;
-    let node = vm.get_node(I16Vec3::new(0, 0, 0)).await?;
+    let node = vm.get_node(pos).await?;
     assert_eq!(node.param0, b"default:diamond");
     Ok(())
 }

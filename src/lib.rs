@@ -60,7 +60,7 @@ pub use map_block::MapBlock;
 pub use map_block::Node;
 pub use map_data::MapData;
 pub use map_data::MapDataError;
-pub use voxel_manip::VoxelManip;
+pub use voxel_manip::MapEdit;
 pub use world::World;
 pub use world::WorldError as Error;
 
